@@ -276,6 +276,81 @@ func TestRDAPBaseForTLD_BootstrapFetchAndCache(t *testing.T) {
 	}
 }
 
+// Cover the DNS bootstrap path where a conditional request yields 304 with no cached body,
+// and the client performs a forced refresh (unconditional) to populate cache and return the base.
+func TestResolveBaseFromBootstrapDNS_304ThenForcedRefresh_Succeeds(t *testing.T) {
+	var hits int
+	etag := `"z1"`
+	lastMod := time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)
+
+	// Server: for /dns.json -> 304 if validators present, else 200 with body
+	dnsBody := `{"services":[[["com"],["https://rdap.example/v1/"]]]}`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/dns.json") {
+			http.NotFound(w, r)
+			return
+		}
+		hits++
+		if r.Header.Get("If-None-Match") != "" || r.Header.Get("If-Modified-Since") != "" {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Last-Modified", lastMod)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, dnsBody)
+	}))
+	defer ts.Close()
+
+	c := New(WithBootstrapURL(ts.URL + "/dns.json"))
+
+	// Preload meta so the first fetch is conditional (304) and there is no cached body for bootstrap.
+	hdr := make(http.Header)
+	hdr.Set("ETag", etag)
+	hdr.Set("Last-Modified", lastMod)
+	c.respCache.StoreMeta(c.bootstrapURL, hdr)
+
+	got, err := c.rdapBaseForTLD(context.Background(), "com")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != "https://rdap.example/v1" {
+		t.Fatalf("base mismatch: %q", got)
+	}
+	if hits != 2 { // first 304 (conditional), then 200 (forced refresh)
+		t.Fatalf("expected 2 requests, got %d", hits)
+	}
+}
+
+// When bootstrap fetch fails (e.g., 5xx), resolveBaseFromBootstrapDNS should fall back
+// to the configured default RDAP base.
+func TestResolveBaseFromBootstrapDNS_ErrorFallsBackToDefault(t *testing.T) {
+	var hits int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/dns.json") {
+			hits++
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	fallback := "https://fallback.example"
+	c := New(WithBootstrapURL(ts.URL+"/dns.json"), WithDefaultRDAPBase(fallback))
+
+	got, err := c.rdapBaseForTLD(context.Background(), "com")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != fallback {
+		t.Fatalf("fallback mismatch: got %q", got)
+	}
+	if hits != 1 {
+		t.Fatalf("expected 1 request, got %d", hits)
+	}
+}
+
 // ---------- getJSON (caching, validators, errors, retry path) ----------
 
 func TestGetJSON_CacheThenConditional304(t *testing.T) {

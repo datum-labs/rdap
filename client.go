@@ -32,6 +32,9 @@ type Client struct {
 	maxRetries int
 	backoff    Backoff
 	now        func() time.Time
+
+	// default/fallbacks
+	defaultRDAPBase string // used when bootstrap lookup fails or TLD missing
 }
 
 // New returns a ready Client with good defaults.
@@ -51,6 +54,8 @@ func New(opts ...Option) *Client {
 		maxRetries: 2,
 		backoff:    ExponentialBackoff(200*time.Millisecond, 2.0, 2*time.Second),
 		now:        time.Now,
+
+		defaultRDAPBase: "https://rdap.org",
 	}
 	for _, opt := range opts {
 		opt(c)

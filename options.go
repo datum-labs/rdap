@@ -13,6 +13,13 @@ func WithASNBootstrapURL(u string) Option { return func(c *Client) { c.asnBootst
 func WithMaxRetries(n int) Option         { return func(c *Client) { c.maxRetries = n } }
 func WithBackoff(b Backoff) Option        { return func(c *Client) { c.backoff = b } }
 func WithHeader(k, v string) Option       { return func(c *Client) { c.headerExtra.Add(k, v) } }
+func WithDefaultRDAPBase(u string) Option {
+	return func(c *Client) {
+		if u != "" {
+			c.defaultRDAPBase = u
+		}
+	}
+}
 func WithCacheSizes(tldCap, entityCap int) Option {
 	return func(c *Client) {
 		if tldCap > 0 {

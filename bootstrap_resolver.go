@@ -25,10 +25,24 @@ func (c *Client) resolveBaseFromBootstrapDNS(ctx context.Context, tld string) (s
 		return base, nil
 	}
 	if err := c.fetchBootstrap(ctx, false); err != nil {
+		// Fall back to default base if bootstrap fetch fails
+		if c.defaultRDAPBase != "" {
+			return c.defaultRDAPBase, nil
+		}
 		return "", err
 	}
 	if base, ok := c.rdapBaseCache.Get(tld); ok {
 		return base, nil
+	}
+	// Try a forced refresh once (handles 304-without-body case or first-run without cache)
+	if err := c.fetchBootstrap(ctx, true); err == nil {
+		if base, ok := c.rdapBaseCache.Get(tld); ok {
+			return base, nil
+		}
+	}
+	// Not found in bootstrap after refresh: fall back to default base
+	if c.defaultRDAPBase != "" {
+		return c.defaultRDAPBase, nil
 	}
 	return "", fmt.Errorf("no RDAP base for TLD %q", tld)
 }
