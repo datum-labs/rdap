@@ -1,4 +1,4 @@
-# github.com/datum-labs/rdap
+# rdap for go
 
 A minimal, RFC-faithful **RDAP client for Go (RFC 9082/9083)** with a tiny CLI (`rdapctl`).  
 No WHOIS fallback. Optional helpers in the library for DNS provider inference and DNSSEC fields.
